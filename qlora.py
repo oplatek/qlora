@@ -1,8 +1,6 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import socket
-
-print(f"HOSTNAME {socket.gethostname()}")
+print(f"HOSTNAME {__import__('socket').gethostname()}", flush=True)
 from collections import defaultdict
 import copy
 import json
