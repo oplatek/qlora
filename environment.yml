@@ -1,41 +1,15 @@
-name: semetricFC
+name: qlora
 channels:
   - pytorch
   - nvidia
   - conda-forge
-  # - defaults
 dependencies:
   - python=3.10
   - pytorch=2.0.1
   - pytorch-cuda=11.8
   - rust=1.64.0
-  # # Pip dependencies should installed through setup.py if you ever create one:
-  # # pip install -e .[dev]   # from this directory
   - pip
   - pip:
-    # Lots of heavy dependencies - decided to copy out code to reduce dependencies
-    #
-    # - bitsandbytes==0.39.0
-    # - accelerate==0.19.0
-    # - wandb==0.15.3
-    # - spacy==3.5.3
-    # - exp-notifier
-    # - ipdb
-    # # alpaca lora
-    # - fire==0.5.0
-    # - datasets==2.12
-    # - transformers==4.29.2
-    # - evaluate==0.4.0
-    # - sentencepiece==0.1.99
-    # # https://github.com/microsoft/LoRA
-    # - loralib==0.1.1
-    # # https://github.com/huggingface/peft/releases
-    # - peft==0.3.0
-    # - appdirs==1.4.4
-    # # http://gradio.app - demo app - TODO build the demo
-    # - gradio==3.32.0
-    # - scikit-learn==1.2.2
-    #
     #  see qlora requirements
     - bitsandbytes==0.39.0
     - transformers @ git+https://github.com/huggingface/transformers.git
