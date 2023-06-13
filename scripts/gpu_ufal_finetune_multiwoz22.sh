@@ -10,9 +10,11 @@ export WANDB_PROJECT=llm_finetune_multiwoz22.sh
 # avg turns per dialogues 13.68
 # avg tokens per turn     13.18
 # --> avg dialogue has ~ 200 tokens
-# gpu-python --gpu-mem 40 qlora.py \
-    # --model_name_or_path gpt2 \
-python qlora.py \
+
+# python \
+gpu-python --gpu-mem 40 \
+  qlora.py \
+    --do_predict true \
     --model_name_or_path huggyllama/llama-7b \
     --source_max_len 512 \
     --target_max_len 64 \
