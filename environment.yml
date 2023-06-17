@@ -20,6 +20,7 @@ dependencies:
     - scikit-learn==1.2.2
     - sentencepiece==0.1.99
     - wandb==0.15.3
+    - git+https://github.com/Tomiinek/MultiWOZ_Evaluation.git@1d03eb438daf30e1f0a5f958f5c78fa0c56eaa38
     # oplatek debugging tools
     - ipdb
     - exp-notifier

@@ -1,42 +1,80 @@
 #!/bin/bash
-# gpu-python
-#  is script for slurm
-#  see https://github.com/oplatek/shellgit-ufal/blob/master/bin/gpu-python
 timestamp="$(date +'%s')"
-export WANDB_ENTITY=metric
-export WANDB_PROJECT=llm_finetune_multiwoz22.sh
 # based on https://aclanthology.org/D18-1547.pdf
 # table 1
 # avg turns per dialogues 13.68
 # avg tokens per turn     13.18
 # --> avg dialogue has ~ 200 tokens
 
-# python \
-gpu-python --gpu-mem 40 \
+if [[ $USER = oplatek ]] ; then
+  # logging to wandb.ai is as easy as setup your ENTITY and name your PROJECT
+  # change it to yours probably new branch for your username
+  export WANDB_ENTITY=metric
+  export WANDB_PROJECT=llm_finetune_multiwoz22.sh
+fi
+
+if [[ $HOSTNAME = sol2 ]] ; then
+  PYTHON="gpu-python --gpu-mem 40"   # submit using slurm on UFAL MFF CUNI slurm cluster
+  # gpu-python
+  #  is script for slurm
+  #  see https://github.com/oplatek/shellgit-ufal/blob/master/bin/gpu-python
+elif [[ $HOSTNAME = tdll-*gpu* ]] ; then
+  # already on node with a gpu on UFAL cluster use regular python
+  PYTHON=python
+else
+  # by default simply use python and assume you have GPU with enough memory available
+  PYTHON=python
+fi
+
+if [[ $1 = "debug" ]] ; then
+  printf "\n\nWARNING: You are in debugging mode for testing the script: using small model, few steps etc\n\n\n"
+  max_steps=4
+  gradient_accumulation_steps=2
+  logging_steps=2
+  save_steps=2
+  dataloader_num_workers=0
+  max_eval_samples=10
+  model_name_or_path="EleutherAI/pythia-70m"
+else
+  # These args make the training to take long.
+  # For debugging / starting with the script it make sense to try faster & less performant settings.
+  max_steps=1875
+  gradient_accumulation_steps=16
+  logging_steps=10
+  save_steps=500
+  dataloader_num_workers=3
+  max_eval_samples=1000
+  model_name_or_path="huggyllama/llama-7b"
+fi
+
+
+$PYTHON \
   qlora.py \
+    --do_train \
+    --do_eval \
     --do_predict true \
-    --model_name_or_path huggyllama/llama-7b \
+    --max_steps $max_steps \
+    --gradient_accumulation_steps $gradient_accumulation_steps \
+    --logging_steps $logging_steps \
+    --save_steps $save_steps \
+    --dataloader_num_workers $dataloader_num_workers \
+    --max_eval_samples $max_eval_samples \
+    --model_name_or_path $model_name_or_path \
     --source_max_len 512 \
     --target_max_len 64 \
     --output_dir ./output/multiwoz22-7b_${timestamp}_$$ \
     --report_to wandb \
     --dataset multi_woz_v22 \
     --dataset_format multi_woz_v22_dialogs \
-    --logging_steps 10 \
     --save_strategy steps \
     --data_seed 42 \
-    --save_steps 500 \
     --save_total_limit 40 \
     --evaluation_strategy steps \
     --eval_dataset_size 1024 \
-    --max_eval_samples 1000 \
     --per_device_eval_batch_size 1 \
     --max_new_tokens 32 \
-    --dataloader_num_workers 3 \
     --logging_strategy steps \
     --remove_unused_columns False \
-    --do_train \
-    --do_eval \
     --lora_r 64 \
     --lora_alpha 16 \
     --lora_modules all \
@@ -48,8 +86,6 @@ gpu-python --gpu-mem 40 \
     --lr_scheduler_type constant \
     --gradient_checkpointing \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 16 \
-    --max_steps 1875 \
     --eval_steps 187 \
     --learning_rate 0.0002 \
     --adam_beta2 0.999 \
