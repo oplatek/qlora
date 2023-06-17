@@ -1,5 +1,9 @@
+#!/bin/bash
+# model_name_or_path="EleutherAI/pythia-12b"
+# model_name_or_path="EleutherAI/pythia-70m"
+model_name_or_path="$1"
 python qlora.py \
-    --model_name_or_path EleutherAI/pythia-12b \
+    --model_name_or_path "$model_name_or_path" \
     --output_dir ./output \
     --do_train False \
     --do_eval False \
