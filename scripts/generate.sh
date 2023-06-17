@@ -4,7 +4,8 @@
 model_name_or_path="$1"
 
 dataset=multi_woz_v22
-dataset_format=multi_woz_v22_turns
+dataset_format=multi_woz_v22_dialogs
+# dataset_format=multi_woz_v22_turns  # this fails
 output_dir=output/"$(echo $model_name_or_path | sed 's:output/::')"/pred_${dataset_format}/
 
 gpu-python --gpu-mem 40 \
