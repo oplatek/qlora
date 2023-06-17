@@ -1024,7 +1024,8 @@ def train():
         predictions = tokenizer.batch_decode(
             predictions, skip_special_tokens=True, clean_up_tokenization_spaces=True
         )
-        with open(os.path.join(args.output_dir, "predictions.jsonl"), "w") as fout:
+        predictions_jsonl = os.path.join(args.output_dir, "predictions.jsonl")
+        with open(predictions_jsonl, "w") as fout:
             for i, example in enumerate(data_module["predict_dataset"]):
                 example["prediction_with_input"] = predictions[i].strip()
                 example["prediction"] = (
@@ -1035,6 +1036,7 @@ def train():
         trainer.log_metrics("predict", prediction_metrics)
         trainer.save_metrics("predict", prediction_metrics)
         all_metrics.update(prediction_metrics)
+        print(f"\nPredictions saved to {predictions_jsonl}\n\n", flush=True)
 
     if args.do_train or args.do_eval or args.do_predict:
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
