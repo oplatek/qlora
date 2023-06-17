@@ -9,6 +9,10 @@ timestamp="$(date +'%s')"
 if [[ $USER = oplatek ]] ; then
   # logging to wandb.ai is as easy as setup your ENTITY and name your PROJECT
   # change it to yours probably new branch for your username
+  # important commands to be run from your working directory are:
+  #  wandb offline: display and log only locally do not push results to wandb.ai cloud
+  #  wandb online: start/stop logging to wandb.ai cloud
+  #  wandb disabled and wandb disabled : turn on and off the wandb logging completely
   export WANDB_ENTITY=metric
   export WANDB_PROJECT=llm_finetune_multiwoz22.sh
 fi
@@ -27,7 +31,7 @@ else
 fi
 
 if [[ $1 = "debug" ]] ; then
-  printf "\n\nWARNING: You are in debugging mode for testing the script: using small model, few steps etc\n\n\n"
+  printf "\n\nWARNING: You are in a debugging mode for testing the script. Using a small model, few steps, etc.\n\n\n"
   max_steps=4
   gradient_accumulation_steps=2
   logging_steps=2
@@ -47,12 +51,16 @@ else
   model_name_or_path="huggyllama/llama-7b"
 fi
 
+# Cannot be used with the following flags: use separate scripts for that
+    # --predict_with_generate true \
+    # --do_predict true \
 
 $PYTHON \
   qlora.py \
+    --dataset multi_woz_v22 \
+    --dataset_format multi_woz_v22_dialogs \
     --do_train \
     --do_eval \
-    --do_predict true \
     --max_steps $max_steps \
     --gradient_accumulation_steps $gradient_accumulation_steps \
     --logging_steps $logging_steps \
@@ -62,10 +70,8 @@ $PYTHON \
     --model_name_or_path $model_name_or_path \
     --source_max_len 512 \
     --target_max_len 64 \
-    --output_dir ./output/multiwoz22-7b_${timestamp}_$$ \
+    --output_dir ./output/${model_name_or_path}_${timestamp}_$$ \
     --report_to wandb \
-    --dataset multi_woz_v22 \
-    --dataset_format multi_woz_v22_dialogs \
     --save_strategy steps \
     --data_seed 42 \
     --save_total_limit 40 \
