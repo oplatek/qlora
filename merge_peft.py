@@ -1,5 +1,8 @@
 """
-Script for merging PEFT LoRA weights with the base model. Uses code from https://github.com/eugenepentland/landmark-attention-qlora/blob/main/llama/merge_peft.py
+Script for merging PEFT LoRA weights with the base model.
+Uses code from:
+ - https://github.com/artidoro/qlora/blob/d1765faa571a5c856bac34f02535544ce19d7b81/merge_peft.py
+ - https://github.com/eugenepentland/landmark-attention-qlora/blob/main/llama/merge_peft.py
 Usage: python merge_peft.py [-h] [--base_model_name_or_path BASE_MODEL_NAME_OR_PATH] [--peft_model_path PEFT_MODEL_PATH] [--output_dir OUTPUT_DIR] [--device DEVICE]
                                [--push_to_hub]
 
@@ -11,6 +14,7 @@ import argparse
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
+
 
 def get_args():
     parser = argparse.ArgumentParser()
@@ -31,10 +35,10 @@ def main():
     try:
         args = get_args()
 
-        if args.device == 'auto':
-            device_arg = {'device_map': 'auto'}
+        if args.device == "auto":
+            device_arg = {"device_map": "auto"}
         else:
-            device_arg = {'device_map': {"": args.device}}
+            device_arg = {"device_map": {"": args.device}}
 
         logger.info(f"Loading base model: {args.base_model_name_or_path}")
         with tqdm(total=1, desc="Loading base model") as pbar:
@@ -42,7 +46,7 @@ def main():
                 args.base_model_name_or_path,
                 return_dict=True,
                 torch_dtype=torch.float16,
-                **device_arg
+                **device_arg,
             )
             pbar.update(1)
 
