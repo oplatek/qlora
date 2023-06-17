@@ -34,6 +34,8 @@ from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model, Pe
 from peft.tuners.lora import LoraLayer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
+from mwzeval.metrics import Evaluator
+
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -41,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
+SYSTEM_SPK_ID = 1  # Multi_woz_v22
 
 
 @dataclass
@@ -657,8 +660,9 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         ):
             # See data at https://huggingface.co/datasets/multi_woz_v22/viewer/v2.2/train?row=0
             # todo add span_info
-
-            dataset = dataset.map(
+            dataset = dataset.filter(
+                lambda x: SYSTEM_SPK_ID in x["turns"]["speaker"]
+            ).map(
                 lambda x: [
                     {
                         "input": dialog_history,
@@ -680,17 +684,10 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
 
             def transform_m(x):
                 turns = x["turns"]
-
-                # nasty hack to use single function gen_dialhistory_speaker_replices
-                full_dialog = [
-                    d
-                    for d in gen_dialhistory_speaker_replices(
-                        turns["speaker"], turns["utterance"], full=True
-                    )
-                ]
-                assert len(full_dialog) == 1, f"{len(full_dialog)} != 1"
-                full_dialog = full_dialog[0]
-
+                full_dialog = "\n".join(
+                    f"bot: {utt}" if spk == SYSTEM_SPK_ID else f"user: {utt}"
+                    for spk, utt in zip(turns["speaker"], turns["utterance"])
+                )
                 return {
                     "input": "",
                     "output": full_dialog,
@@ -842,7 +839,8 @@ def train():
         args.model_name_or_path,
         cache_dir=args.cache_dir,
         padding_side="right",
-        use_fast=False,  # Fast tokenizer giving issues.
+        use_fast="pythia"
+        in args.model_name_or_path,  # Fast tokenizer giving issues but Pythia models require them
         tokenizer_type="llama"
         if "llama" in args.model_name_or_path
         else None,  # Needed for HF name change
@@ -958,6 +956,21 @@ def train():
 
         trainer.add_callback(MMLUEvalCallback)
 
+    if args.dataset in ["multi_woz_v22_turns", "multi_woz_v22_dialogues"]:
+        e = MZ_Evaluator(bleu=True, success=False, richness=False)
+        raise NotImplementedError(
+            """
+        TODO implement evaluation callback 
+
+        for item in data:
+            my_predictions[item.dialog_id] = model.predict(item)
+                ...
+                    
+                    results = e.evaluate(my_predictions)
+                    print(f"Epoch {epoch} BLEU: {results}")
+        """
+        )
+
     # Verifying the datatypes.
     dtypes = {}
     for _, p in model.named_parameters():
@@ -993,6 +1006,15 @@ def train():
     # Prediction
     if args.do_predict:
         logger.info("*** Predict ***")
+        if not training_args.predict_with_generate:
+            print("WARNING: setting predict_with_generate")
+            training_args.predict_with_generate = True
+            trainer = Seq2SeqTrainer(
+                model=model,
+                tokenizer=tokenizer,
+                args=training_args,
+            )
+
         prediction_output = trainer.predict(
             test_dataset=data_module["predict_dataset"], metric_key_prefix="predict"
         )
@@ -1034,7 +1056,7 @@ def gen_dialhistory_speaker_replices(speakers, utterances, full=False):
     for n_id, spk_id in enumerate(speakers):
         if spk_id == 0:
             continue  # for user
-        else:  # system turn
+        else:  # system turn: spk_id == 1
             assert last_gen_id == n_id - 2, f"{last_gen_id} vs {n_id}"
             last_gen_id = n_id
             dialog_history.append(f"user: {utterances[n_id -1]}")
