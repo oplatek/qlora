@@ -36,7 +36,7 @@ if [[ $1 = "debug" ]] ; then
   logging_steps=2
   save_steps=2
   dataloader_num_workers=0
-  max_eval_samples=10
+  max_eval_samples=3
   model_name_or_path="EleutherAI/pythia-70m"
 else
   # These args make the training to take long.
@@ -52,12 +52,12 @@ fi
 
 # Cannot be used with the following flags: use separate scripts for that
     # --predict_with_generate true \
-    # --do_predict true \
+    # --do_predict \
 
 $PYTHON \
   qlora.py \
     --dataset multi_woz_v22 \
-    --dataset_format multi_woz_v22_dialogs \
+    --dataset_format multi_woz_v22_turns \
     --do_train \
     --do_eval \
     --max_steps $max_steps \

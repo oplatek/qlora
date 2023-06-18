@@ -56,7 +56,7 @@ from peft import prepare_model_for_kbit_training, LoraConfig, get_peft_model, Pe
 from peft.tuners.lora import LoraLayer
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
-from mwzeval.metrics import Evaluator
+from mwzeval.metrics import Evaluator as MWZEvaluator
 
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -227,7 +227,7 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     )  # use lora dropout instead for regularization if needed
     learning_rate: float = field(default=0.0002, metadata={"help": "The learnign rate"})
     remove_unused_columns: bool = field(
-        default=False,
+        default=True,
         metadata={"help": "Removed unused columns. Needed to make this codebase work."},
     )
     max_grad_norm: float = field(
@@ -827,14 +827,16 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         elif dataset_format == "input-output":
             # leave as is
             pass
-        # Remove unused columns.
-        dataset = dataset.remove_columns(
-            [
-                col
-                for col in dataset.column_names["train"]
-                if col not in ["input", "output"]
-            ]
-        )
+
+        # # Remove unused columns.
+        if args.remove_unused_columns:
+            dataset = dataset.remove_columns(
+                [
+                    col
+                    for col in dataset.column_names["train"]
+                    if col not in ["input", "output"]
+                ]
+            )
         return dataset
 
     # Load dataset.
@@ -957,6 +959,7 @@ def train():
                 ),
             }
         )
+
     data_module = make_data_module(tokenizer=tokenizer, args=args)
     trainer = Seq2SeqTrainer(
         model=model,
@@ -968,6 +971,20 @@ def train():
     # Callbacks
     if not args.full_finetune:
         trainer.add_callback(SavePeftModelCallback)
+    if args.dataset_format == "multi_woz_v22_turns":
+        # __import__("ipdb").set_trace()
+        # TODO "multi_woz_v22_dialogs"
+        e = MWZEvaluator(bleu=True, success=False, richness=False)
+        # e = MWZEvaluator(bleu=True, success=True, richness=True)  # TODO full evaluation
+
+        class MWZEvalCallback(transformers.TrainerCallback):
+            def on_evaluate(self, args, state, control, model, **kwargs):
+                # compute_metrics provides only inputs, label_ids and predictions tensors
+                test_dataset = data_module["eval_dataset"]
+                # __import__("ipdb").set_trace()
+                print("ahoj")
+
+        trainer.add_callback(MWZEvalCallback)
     if args.do_mmlu_eval:
         if args.mmlu_dataset == "mmlu-zs":
             mmlu_dataset = load_dataset(
@@ -1043,21 +1060,6 @@ def train():
                 trainer.data_collator.source_max_len = source_max_len
 
         trainer.add_callback(MMLUEvalCallback)
-
-    if args.dataset in ["multi_woz_v22_turns", "multi_woz_v22_dialogues"]:
-        e = MZ_Evaluator(bleu=True, success=False, richness=False)
-        raise NotImplementedError(
-            """
-        TODO implement evaluation callback 
-
-        for item in data:
-            my_predictions[item.dialog_id] = model.predict(item)
-                ...
-                    
-                    results = e.evaluate(my_predictions)
-                    print(f"Epoch {epoch} BLEU: {results}")
-        """
-        )
 
     # Verifying the datatypes.
     dtypes = {}
