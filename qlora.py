@@ -1042,6 +1042,8 @@ def train():
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
             fout.write(json.dumps(all_metrics))
 
+    print(f"\n{args.output_dir=}\n\n", flush=True)
+
 
 def gen_dialhistory_speaker_replices(speakers, utterances, full=False):
     """
