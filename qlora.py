@@ -65,7 +65,10 @@ logger = logging.getLogger(__name__)
 
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
+# MULTI_WOZ_V22 constants
 SYSTEM_SPK_ID = 1  # Multi_woz_v22
+BOT_PREFIX = "bot> "
+USR_PREFIX = "user> "
 
 
 @dataclass
@@ -680,7 +683,7 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         elif dataset_name == "oasst1":
             return load_dataset("timdettmers/openassistant-guanaco")
         elif dataset_name == "multi_woz_v22":
-            return load_dataset("multi_woz_v22")
+            return load_dataset("multi_woz_v22", streaming=False)
         elif dataset_name == "vicuna":
             raise NotImplementedError("Vicuna data was not released.")
         else:
@@ -711,31 +714,81 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
             dataset_format == "multi_woz_v22_turns" and args.dataset == "multi_woz_v22"
         ):
             # See data at https://huggingface.co/datasets/multi_woz_v22/viewer/v2.2/train?row=0
-            dataset = dataset.filter(
-                lambda x: SYSTEM_SPK_ID in x["turns"]["speaker"]
-            ).map(
-                lambda x: [
-                    {
-                        "input": dialog_history,
-                        "output": dialog_history + system_reply,
-                    }
-                    for dialog_history, system_reply in gen_dialhistory_speaker_replices(
-                        x["turns"]["speaker"], x["turns"]["utterance"]
+
+            def extract_spks_utts(dialog):
+                turns = dialog["turns"]
+                speakers = turns["speaker"]
+                utterances = turns["utterance"]
+                assert len(speakers) == len(utterances), (speaker, utterances)
+                dialogue_id = dialog["dialogue_id"]
+                return {
+                    "dialogue_id": dialogue_id,
+                    "speakers": speakers,
+                    "utterances": utterances,
+                }
+
+            def batched_dial2turns(dialogs):
+                batches = {"input": [], "output": [], "dialogue_id": [], "turn_id": []}
+                speakerss = dialogs["speakers"]
+                utterancess = dialogs["utterances"]
+                dialogue_ids = dialogs["dialogue_id"]
+                for speakers, utterances, dialogue_id in zip(
+                    speakerss, utterancess, dialogue_ids
+                ):
+                    inps, tgts, dids, tids = dial2turns(
+                        speakers, utterances, dialogue_id
                     )
-                ],
-                batched=True,
+                    batches["input"].extend(inps)
+                    batches["output"].extend(tgts)
+                    batches["dialogue_id"].extend(dids)
+                    batches["turn_id"].extend(tids)
+                return batches
+
+            def dial2turns(speakers, utterances, dialogue_id):
+                inputs, targets, turn_ids, dialog_history = [], [], [], []
+                last_gen_id = -1
+                for turn_id, spk_id in enumerate(speakers):
+                    if spk_id != SYSTEM_SPK_ID:
+                        continue  # for user
+                    else:  # system turn: spk_id == 1
+                        assert (
+                            last_gen_id == turn_id - 2
+                        ), f"{last_gen_id} vs {turn_id} for\n{speakers=}\n{utterances=}"
+                        last_gen_id = turn_id
+                        dialog_history.append(f"{USR_PREFIX}{utterances[turn_id -1]}")
+                        dialog_history.append(f"{BOT_PREFIX}")  # prompt for bot
+                        dial_hist_str = "\n".join(dialog_history)
+                        inputs.append(dial_hist_str)
+                        targets.append(dial_hist_str + utterances[turn_id])
+                        turn_ids.append(turn_id)
+                return (
+                    inputs,
+                    targets,
+                    [dialogue_id] * len(turn_ids),
+                    turn_ids,
+                )
+
+            dataset = (
+                dataset.map(extract_spks_utts)
+                .remove_columns(("turns", "services"))
+                .filter(lambda x: any([x == SYSTEM_SPK_ID for x in x["speakers"]]))
+                .map(
+                    batched_dial2turns,
+                    batched=True,
+                    remove_columns=("speakers", "utterances"),
+                )
             )
         elif (
             dataset_format == "multi_woz_v22_dialogs"
             and args.dataset == "multi_woz_v22"
         ):
             # See data at https://huggingface.co/datasets/multi_woz_v22/viewer/v2.2/train?row=0
-            # replicating traing format as in to https://huggingface.co/datasets/timdettmers/openassistant-guanaco
+            # replicating traing format as in https://huggingface.co/datasets/timdettmers/openassistant-guanaco
 
-            def transform_m(x):
+            def multiwoz_full_dial(x):
                 turns = x["turns"]
                 full_dialog = "\n".join(
-                    f"bot: {utt}" if spk == SYSTEM_SPK_ID else f"user: {utt}"
+                    f"{BOT_PREFIX if spk == SYSTEM_SPK_ID else USR_PREFIX}{utt}"
                     for spk, utt in zip(turns["speaker"], turns["utterance"])
                 )
                 return {
@@ -743,7 +796,7 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
                     "output": full_dialog,
                 }
 
-            dataset = dataset.map(transform_m)
+            dataset = dataset.map(multiwoz_full_dial)
         elif dataset_format == "chip2" or (
             dataset_format is None and args.dataset == "chip2"
         ):
@@ -792,6 +845,9 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
     if args.do_eval or args.do_predict:
         if "eval" in dataset:
             eval_dataset = dataset["eval"]
+        if "test" in dataset and args.dataset == "multi_woz_v22":
+            # TODO can I remove the multi_woz_v22 condition. keeping it strict for backward compatability
+            eval_dataset = dataset["test"]
         else:
             print(
                 "Splitting train dataset in train and validation according to `eval_dataset_size`"
@@ -853,16 +909,16 @@ def train():
     args = argparse.Namespace(
         **vars(model_args), **vars(data_args), **vars(training_args)
     )
+    set_seed(args.seed)
 
     if args.checkpoint_dir is not None:
         checkpoint_dir = Path(args.checkpoint_dir)
         assert checkpoint_dir.exists(), checkpoint_dir
-    model = get_accelerate_model(args, checkpoint_dir)
 
+    model = get_accelerate_model(args, checkpoint_dir)
     model.config.use_cache = False
     print_trainable_parameters(args, model)
     print("loaded model")
-    set_seed(args.seed)
 
     # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -1066,40 +1122,13 @@ def train():
         trainer.log_metrics("predict", prediction_metrics)
         trainer.save_metrics("predict", prediction_metrics)
         all_metrics.update(prediction_metrics)
-        print(f"\nPredictions saved to\n\t{predictions_jsonl}\n\n", flush=True)
+        print(f"\nPredictions saved to\n\t{predictions_jsonl}\n", flush=True)
 
     if args.do_train or args.do_eval or args.do_predict:
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
             fout.write(json.dumps(all_metrics))
 
-    print(f"\noutput_dir:\n\t{args.output_dir}\n\n", flush=True)
-
-
-def gen_dialhistory_speaker_replices(speakers, utterances, full=False):
-    """
-    Data example
-    "speaker": [ 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 ],
-    "utterance": [ "i need a place to dine in the center thats expensive", "I have several options for you; do you prefer African, Asian, or British food?", "Any sort of food would be fine, as long as it is a bit expensive. Could I get the phone number for your recommendation?", "There is an Afrian place named Bedouin in the centre. How does that sound?", "Sounds good, could I get that phone number? Also, could you recommend me an expensive hotel?", "Bedouin's phone is 01223367660. As far as hotels go, I recommend the University Arms Hotel in the center of town.", "Yes. Can you book it for me?", "Sure, when would you like that reservation?", "i want to book it for 2 people and 2 nights starting from saturday.", "Your booking was successful. Your reference number is FRGZWQL2 . May I help you further?", "That is all I need to know. Thanks, good bye.", "Thank you so much for Cambridge TownInfo centre. Have a great day!"]
-
-    consequently for speaker ids
-     0 - USER
-     1 - SYSTEM
-    """
-    last_gen_id = -1
-    dialog_history = []
-    for n_id, spk_id in enumerate(speakers):
-        if spk_id == 0:
-            continue  # for user
-        else:  # system turn: spk_id == 1
-            assert last_gen_id == n_id - 2, f"{last_gen_id} vs {n_id}"
-            last_gen_id = n_id
-            dialog_history.append(f"user: {utterances[n_id -1]}")
-            dialog_history.append(f"bot:")
-            if not full:
-                yield ("\n".join(dialog_history), utterances[n_id])
-
-    if full:
-        yield "\n".join(dialog_history) + utterances[n_id]
+    print(f"output_dir:\n\t{args.output_dir}\n", flush=True)
 
 
 if __name__ == "__main__":
