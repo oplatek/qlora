@@ -914,6 +914,8 @@ def train():
     if args.checkpoint_dir is not None:
         checkpoint_dir = Path(args.checkpoint_dir)
         assert checkpoint_dir.exists(), checkpoint_dir
+    else:
+        checkpoint_dir = None
 
     model = get_accelerate_model(args, checkpoint_dir)
     model.config.use_cache = False

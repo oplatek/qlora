@@ -1,5 +1,4 @@
 #!/bin/bash
-timestamp="$(date +'%s')"
 # based on https://aclanthology.org/D18-1547.pdf
 # table 1
 # avg turns per dialogues 13.68
@@ -68,9 +67,10 @@ $PYTHON \
     --dataloader_num_workers $dataloader_num_workers \
     --max_eval_samples $max_eval_samples \
     --model_name_or_path $model_name_or_path \
-    --source_max_len 512 \
-    --target_max_len 64 \
-    --output_dir ./output/${model_name_or_path}_${timestamp}_$$ \
+    --source_max_len 256 \
+    --target_max_len 288 \
+    --max_new_tokens 32 \
+    --output_dir "./output/${model_name_or_path}_$(date +'%s')_$$" \
     --report_to wandb \
     --save_strategy steps \
     --data_seed 42 \
