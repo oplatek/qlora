@@ -2,6 +2,7 @@
 # LICENSE file in the root directory of this source tree.
 print(f"HOSTNAME {__import__('socket').gethostname()}", flush=True)
 from collections import defaultdict
+import re
 import copy
 import json
 import os
@@ -141,7 +142,12 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     )
     lora_modules: str = field(
         default="linear",
-        metadata={"help": "Linear was the default for original qlora script."},
+        metadata={
+            "help": "'linear' was the default for original qlora script. "
+            "You can choose from ['linear', 'fnn', 'attention', 'regexp_YOURPATTERN']. "
+            "For example 'attention' value is equivalent to 'regexp_attn|attention|query|key|value'. "
+            "This is a heuristic based on the base model's naming convention for its layers. Be careful."
+        },
     )
     adam8bit: bool = field(default=False, metadata={"help": "Use 8-bit adam."})
     double_quant: bool = field(
@@ -273,7 +279,7 @@ class GenerationArguments:
     no_repeat_ngram_size: Optional[int] = field(default=0)
 
 
-def find_all_linear_names(args, model):
+def find_linear_names(args, model):
     cls = (
         bnb.nn.Linear4bit
         if args.bits == 4
@@ -282,13 +288,18 @@ def find_all_linear_names(args, model):
     lora_module_names = set()
     for name, module in model.named_modules():
         if isinstance(module, cls):
+            name = name.lower()
             if (
                 args.lora_modules == "linear"
                 or (
                     args.lora_modules == "attention"
-                    and re.search("attn|attention|query|key|value", name.lower())
+                    and re.search("attn|attention|query|key|value", name)
                 )
-                or (args.lora_modules == "ffn" and re.search("mlp|ffn", name.lower()))
+                or (args.lora_modules == "ffn" and re.search("mlp|ffn", name))
+                or (
+                    args.lora_modules.startswith("regexp_")
+                    and re.search(args.lora_modules[len("regexp_") :], name)
+                )
             ):
                 names = name.split(".")
                 lora_module_names.add(names[0] if len(names) == 1 else names[-1])
@@ -406,12 +417,12 @@ def get_accelerate_model(args, checkpoint_dir):
                 model, join(checkpoint_dir, "adapter_model"), is_trainable=True
             )
         else:
-            print(f"adding LoRA modules...")
-            modules = find_all_linear_names(args, model)
+            lora_modules = find_linear_names(args, model)
+            print(f"adding LoRA modules {lora_modules=}")
             config = LoraConfig(
                 r=args.lora_r,
                 lora_alpha=args.lora_alpha,
-                target_modules=modules,
+                target_modules=lora_modules,
                 lora_dropout=args.lora_dropout,
                 bias="none",
                 task_type="CAUSAL_LM",
