@@ -139,6 +139,10 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     full_finetune: bool = field(
         default=False, metadata={"help": "Finetune the entire model without adapters."}
     )
+    lora_modules: str = field(
+        default="linear",
+        metadata={"help": "Linear was the default for original qlora script."},
+    )
     adam8bit: bool = field(default=False, metadata={"help": "Use 8-bit adam."})
     double_quant: bool = field(
         default=True,
@@ -278,6 +282,16 @@ def find_all_linear_names(args, model):
     lora_module_names = set()
     for name, module in model.named_modules():
         if isinstance(module, cls):
+            if (
+                args.lora_modules == "linear"
+                or (
+                    args.lora_modules == "attention"
+                    and re.search("attn|attention|query|key|value", name.lower())
+                )
+                or (args.lora_modules == "ffn" and re.search("mlp|ffn", name.lower()))
+            ):
+                names = name.split(".")
+                lora_module_names.add(names[0] if len(names) == 1 else names[-1])
             names = name.split(".")
             lora_module_names.add(names[0] if len(names) == 1 else names[-1])
 
