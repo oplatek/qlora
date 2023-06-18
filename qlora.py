@@ -1,7 +1,28 @@
-# This source code is licensed under the MIT license found in the
-# LICENSE file in the root directory of this source tree.
+"""
+This source code is licensed under the MIT license found in the
+LICENSE file in the root directory of this source tree.
+
+This is a modified script from the qlora repository.
+Additional features:
+    - loading multi_woz_v22 dataset as:
+        - turn prediction word by word conditioned on dialogue history
+        - as next word predictions from full dialogues
+        For MultiWoz dataset description see the dataset card on HF:
+        https://huggingface.co/datasets/multi_woz_v22
+    - scripts with sensible parameters for multi_woz_v22 
+        - finetuning
+        - generation
+    - scripts and fixes to use pythia (small) models for debugging
+    - Merge script of PEFT checkpoints and the base model weights. See merge_peft.py.
+    - Ability to define LoRa modules with regexp.
+
+TODOs:
+  - show how to evaluate MultiWoz 2.2.
+  - add more interesting annotations from multi_woz: e.g. span_info
+"""
 print(f"HOSTNAME {__import__('socket').gethostname()}", flush=True)
 from collections import defaultdict
+from pathlib import Path
 import re
 import copy
 import json
@@ -50,6 +71,12 @@ SYSTEM_SPK_ID = 1  # Multi_woz_v22
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="EleutherAI/pythia-12b")
+    checkpoint_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "PEFT checkpoint_dir at given step. Note the base model is not there so specify the base modelvia model_name_or_path "
+        },
+    )
     trust_remote_code: Optional[bool] = field(
         default=False,
         metadata={
@@ -684,7 +711,6 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
             dataset_format == "multi_woz_v22_turns" and args.dataset == "multi_woz_v22"
         ):
             # See data at https://huggingface.co/datasets/multi_woz_v22/viewer/v2.2/train?row=0
-            # todo add span_info
             dataset = dataset.filter(
                 lambda x: SYSTEM_SPK_ID in x["turns"]["speaker"]
             ).map(
@@ -704,8 +730,7 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
             and args.dataset == "multi_woz_v22"
         ):
             # See data at https://huggingface.co/datasets/multi_woz_v22/viewer/v2.2/train?row=0
-            # todo add span_info
-            # replicating traing as in to https://huggingface.co/datasets/timdettmers/openassistant-guanaco
+            # replicating traing format as in to https://huggingface.co/datasets/timdettmers/openassistant-guanaco
 
             def transform_m(x):
                 turns = x["turns"]
@@ -811,25 +836,6 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
     )
 
 
-def get_last_checkpoint(checkpoint_dir):
-    if isdir(checkpoint_dir):
-        is_completed = exists(join(checkpoint_dir, "completed"))
-        if is_completed:
-            return None, True  # already finished
-        max_step = 0
-        for filename in os.listdir(checkpoint_dir):
-            if isdir(join(checkpoint_dir, filename)) and filename.startswith(
-                "checkpoint"
-            ):
-                max_step = max(max_step, int(filename.replace("checkpoint-", "")))
-        if max_step == 0:
-            return None, is_completed  # training started, but no checkpoint
-        checkpoint_dir = join(checkpoint_dir, f"checkpoint-{max_step}")
-        print(f"Found a previous checkpoint at: {checkpoint_dir}")
-        return checkpoint_dir, is_completed  # checkpoint found!
-    return None, False  # first training
-
-
 def train():
     hfparser = transformers.HfArgumentParser(
         (ModelArguments, DataArguments, TrainingArguments, GenerationArguments)
@@ -848,10 +854,9 @@ def train():
         **vars(model_args), **vars(data_args), **vars(training_args)
     )
 
-    checkpoint_dir, completed_training = get_last_checkpoint(args.output_dir)
-    if completed_training:
-        print("Detected that training was already completed!")
-
+    if args.checkpoint_dir is not None:
+        checkpoint_dir = Path(args.checkpoint_dir)
+        assert checkpoint_dir.exists(), checkpoint_dir
     model = get_accelerate_model(args, checkpoint_dir)
 
     model.config.use_cache = False
@@ -1061,13 +1066,13 @@ def train():
         trainer.log_metrics("predict", prediction_metrics)
         trainer.save_metrics("predict", prediction_metrics)
         all_metrics.update(prediction_metrics)
-        print(f"\nPredictions saved to {predictions_jsonl}\n\n", flush=True)
+        print(f"\nPredictions saved to\n\t{predictions_jsonl}\n\n", flush=True)
 
     if args.do_train or args.do_eval or args.do_predict:
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
             fout.write(json.dumps(all_metrics))
 
-    print(f"\n{args.output_dir=}\n\n", flush=True)
+    print(f"\noutput_dir:\n\t{args.output_dir}\n\n", flush=True)
 
 
 def gen_dialhistory_speaker_replices(speakers, utterances, full=False):
