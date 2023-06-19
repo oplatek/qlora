@@ -1117,6 +1117,8 @@ def train():
         predictions_jsonl = os.path.join(args.output_dir, "predictions.jsonl")
         with open(predictions_jsonl, "w") as fout:
             for i, example in enumerate(data_module["predict_dataset"]):
+                # todo add dialogue_id and turn_id
+                # __import__("ipdb").set_trace()
                 example["prediction_with_input"] = predictions[i].strip()
                 example["prediction"] = (
                     predictions[i].replace(example["input"], "").strip()
