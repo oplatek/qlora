@@ -1143,20 +1143,30 @@ def train():
             with open(predictions_jsonl, "r") as r:
                 turns = [json.loads(line) for line in r]
             d = group_turns_by_dialogue(turns)
-            predictions_dialogs_jsonl = os.path.join(
-                args.output_dir, "predictions_dialogs.jsonl"
+            predictions_dialogs_json = os.path.join(
+                args.output_dir, "predictions_dialogs.json"
             )
-            with open(predictions_dialogs_jsonl, "w") as w:
+            with open(predictions_dialogs_json, "w") as w:
+                JSON_SUFFIX_LEN = len(".json")
                 w.write("{\n")
-                __import__("ipdb").set_trace()
-                w.write(",\n  ".join([f"{k}: {json.dumps(v)}" for k, v in d.items()]))
+                w.write(
+                    ",\n  ".join(
+                        [
+                            f'"{k[:-JSON_SUFFIX_LEN].lower()}": {json.dumps(v)}'
+                            for k, v in d.items()
+                        ]
+                    )
+                )
                 w.write("\n}")
         print(prediction_metrics)
         trainer.log_metrics("predict", prediction_metrics)
         trainer.save_metrics("predict", prediction_metrics)
         all_metrics.update(prediction_metrics)
         print(f"\nPredictions saved to\n\t{predictions_jsonl}\n", flush=True)
-
+        print(
+            f"\nResponses groupped by dialogue saved to\n\t{predictions_dialogs_json}\n",
+            flush=True,
+        )
     if args.do_train or args.do_eval or args.do_predict:
         with open(os.path.join(args.output_dir, "metrics.json"), "w") as fout:
             fout.write(json.dumps(all_metrics))
