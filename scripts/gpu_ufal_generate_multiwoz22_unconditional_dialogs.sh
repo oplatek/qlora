@@ -14,8 +14,11 @@ num_samples=10
 #  store the output in the checkpoint subdirectory.
 output_dir=output/"$(echo $checkpoint_dir | sed 's:output/::')"/pred_${dataset_format}_${num_samples}_$(date +'%s')/
 
+# Either login to a machine with GPU and use python or submit your script to a gpu-machine e.g. using https://github.com/oplatek/shellgit-ufal/blob/master/bin/gpu-python
+# python \
 gpu-python --gpu-mem 40 \
   qlora.py \
+    --dataloader_num_workers 3 \
     --max_eval_samples $num_samples \
     --model_name_or_path "$model_name_or_path" \
     --checkpoint_dir "$checkpoint_dir" \

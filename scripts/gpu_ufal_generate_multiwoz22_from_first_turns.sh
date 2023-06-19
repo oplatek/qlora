@@ -34,3 +34,7 @@ gpu-python --gpu-mem 40 \
     --do_sample \
     --top_p 0.9 \
     --num_beams 1 \
+
+# you may want to evaluate your models using 
+INP_DIALOG=$output_dir/predictions_dialogs.json
+python evaluate.py --richness --bleu --success --input $INP_DIALOG  --output ${INP_DIALOG%jsonl}results.json
