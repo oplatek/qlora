@@ -227,7 +227,7 @@ class TrainingArguments(transformers.Seq2SeqTrainingArguments):
     )  # use lora dropout instead for regularization if needed
     learning_rate: float = field(default=0.0002, metadata={"help": "The learnign rate"})
     remove_unused_columns: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Removed unused columns. Needed to make this codebase work."},
     )
     max_grad_norm: float = field(
@@ -827,16 +827,14 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         elif dataset_format == "input-output":
             # leave as is
             pass
-
-        # # Remove unused columns.
-        if args.remove_unused_columns:
-            dataset = dataset.remove_columns(
-                [
-                    col
-                    for col in dataset.column_names["train"]
-                    if col not in ["input", "output"]
-                ]
-            )
+        # Remove unused columns.
+        dataset = dataset.remove_columns(
+            [
+                col
+                for col in dataset.column_names["train"]
+                if col not in ["input", "output"]
+            ]
+        )
         return dataset
 
     # Load dataset.
