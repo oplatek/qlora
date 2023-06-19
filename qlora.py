@@ -92,6 +92,16 @@ class ModelArguments:
     )
 
 
+def group_turns_by_dialogue(turns):
+    d = defaultdict(list)
+    for t in turns:
+        d[t["dialogue_id"]].append(t)
+
+    for turns in d.values():
+        turns = sorted(turns, key=lambda t: t["turn_id"])
+    return d
+
+
 @dataclass
 class DataArguments:
     eval_dataset_size: int = field(
@@ -794,9 +804,17 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
                 return {
                     "input": "",
                     "output": full_dialog,
+                    "dialogue_id": x["dialogue_id"],
                 }
 
             dataset = dataset.map(multiwoz_full_dial)
+            dataset = dataset.remove_columns(
+                [
+                    col
+                    for col in dataset.column_names["train"]
+                    if col not in ["input", "output", "dialogue_id"]
+                ]
+            )
         elif dataset_format == "chip2" or (
             dataset_format is None and args.dataset == "chip2"
         ):
@@ -827,14 +845,14 @@ def make_data_module(tokenizer: transformers.PreTrainedTokenizer, args) -> Dict:
         elif dataset_format == "input-output":
             # leave as is
             pass
-        # Remove unused columns.
-        dataset = dataset.remove_columns(
-            [
-                col
-                for col in dataset.column_names["train"]
-                if col not in ["input", "output"]
-            ]
-        )
+        # # Remove unused columns.
+        # dataset = dataset.remove_columns(
+        #     [
+        #         col
+        #         for col in dataset.column_names["train"]
+        #         if col not in ["input", "output"]
+        #     ]
+        # )
         return dataset
 
     # Load dataset.
@@ -1116,12 +1134,23 @@ def train():
         with open(predictions_jsonl, "w") as fout:
             for i, example in enumerate(data_module["predict_dataset"]):
                 # todo add dialogue_id and turn_id
-                # __import__("ipdb").set_trace()
                 example["prediction_with_input"] = predictions[i].strip()
-                example["prediction"] = (
+                example["response"] = (
                     predictions[i].replace(example["input"], "").strip()
                 )
                 fout.write(json.dumps(example) + "\n")
+        if args.dataset_format == "multi_woz_v22_turns":
+            with open(predictions_jsonl, "r") as r:
+                turns = [json.loads(line) for line in r]
+            d = group_turns_by_dialogue(turns)
+            predictions_dialogs_jsonl = os.path.join(
+                args.output_dir, "predictions_dialogs.jsonl"
+            )
+            with open(predictions_dialogs_jsonl, "w") as w:
+                w.write("{\n")
+                __import__("ipdb").set_trace()
+                w.write(",\n  ".join([f"{k}: {json.dumps(v)}" for k, v in d.items()]))
+                w.write("\n}")
         print(prediction_metrics)
         trainer.log_metrics("predict", prediction_metrics)
         trainer.save_metrics("predict", prediction_metrics)
